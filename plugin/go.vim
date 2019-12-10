@@ -42,20 +42,12 @@ call s:checkVersion()
 " gocode-gomod) does not yet work in module aware mode.
 let s:packages = {
       \ 'asmfmt':        ['github.com/klauspost/asmfmt/cmd/asmfmt@master'],
-      \ 'dlv':           ['github.com/go-delve/delve/cmd/dlv@master'],
       \ 'errcheck':      ['github.com/kisielk/errcheck@master'],
       \ 'fillstruct':    ['github.com/davidrjenni/reftools/cmd/fillstruct@master'],
-      \ 'gocode':        ['github.com/mdempsky/gocode@master', {'windows': ['-ldflags', '-H=windowsgui']}],
-      \ 'gocode-gomod':  ['github.com/stamblerre/gocode'],
-      \ 'godef':         ['github.com/rogpeppe/godef@master'],
       \ 'gogetdoc':      ['github.com/zmb3/gogetdoc@master'],
       \ 'goimports':     ['golang.org/x/tools/cmd/goimports@master'],
       \ 'golint':        ['golang.org/x/lint/golint@master'],
-      \ 'gopls':         ['golang.org/x/tools/gopls@latest', {}, {'after': function('go#lsp#Restart', [])}],
-      \ 'golangci-lint': ['github.com/golangci/golangci-lint/cmd/golangci-lint@master'],
       \ 'gomodifytags':  ['github.com/fatih/gomodifytags@master'],
-      \ 'gorename':      ['golang.org/x/tools/cmd/gorename@master'],
-      \ 'gotags':        ['github.com/jstemmer/gotags@master'],
       \ 'guru':          ['golang.org/x/tools/cmd/guru@master'],
       \ 'impl':          ['github.com/josharian/impl@master'],
       \ 'keyify':        ['honnef.co/go/tools/cmd/keyify@master'],
@@ -282,7 +274,7 @@ function! s:register()
   if go#config#AutodetectGopath()
     let l:RestoreGopath = go#util#SetEnv('GOPATH', go#path#Detect())
   endif
-  call go#lsp#DidOpen(expand('<afile>:p'))
+  " call go#lsp#DidOpen(expand('<afile>:p'))
   call call(l:RestoreGopath, [])
 endfunction
 

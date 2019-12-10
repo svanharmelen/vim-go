@@ -86,9 +86,9 @@ augroup vim-go-buffer
   " too (e.g.  BufFilePost , CursorHold , CursorHoldI, FileReadPost,
   " StdinReadPre, BufWritePost, TextChange, TextChangedI)
   if go#util#has_job()
-    autocmd BufWritePost <buffer> call go#lsp#DidChange(expand('<afile>:p'))
-    autocmd FileChangedShellPost <buffer> call go#lsp#DidChange(expand('<afile>:p'))
-    autocmd BufDelete <buffer> call go#lsp#DidClose(expand('<afile>:p'))
+    " autocmd BufWritePost <buffer> call go#lsp#DidChange(expand('<afile>:p'))
+    " autocmd FileChangedShellPost <buffer> call go#lsp#DidChange(expand('<afile>:p'))
+    " autocmd BufDelete <buffer> call go#lsp#DidClose(expand('<afile>:p'))
   endif
 
   autocmd BufEnter,CursorHold <buffer> call go#auto#update_autocmd()
@@ -96,7 +96,7 @@ augroup vim-go-buffer
   " Echo the identifier information when completion is done. Useful to see
   " the signature of a function, etc...
   if exists('##CompleteDone')
-    autocmd CompleteDone <buffer> call go#auto#echo_go_info()
+    " autocmd CompleteDone <buffer> call go#auto#echo_go_info()
   endif
 
   autocmd BufWritePre <buffer> call go#auto#fmt_autosave()
