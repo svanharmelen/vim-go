@@ -7,7 +7,7 @@ scriptencoding utf-8
 let s:lspfactory = {}
 
 function! s:lspfactory.get() dict abort
-  if empty(get(self, 'current', {})) || empty(get(self.current, 'job', {}))
+  if !has_key(self, 'current') || empty(self.current) || !has_key(self.current, 'job') || empty(self.current.job)
     let self.current = s:newlsp()
   endif
 
@@ -21,12 +21,6 @@ function! s:lspfactory.reset() dict abort
 endfunction
 
 function! s:newlsp() abort
-  let l:lsp = {'sendMessage': funcref('s:noop')}
-
-  if !go#config#GoplsEnabled()
-    return l:lsp
-  endif
-
   if !go#util#has_job()
     let l:oldshortmess=&shortmess
     if has('nvim')
@@ -37,7 +31,7 @@ function! s:newlsp() abort
     " often immediately overwritten by an async message.
     sleep 1
     let &shortmess=l:oldshortmess
-    return l:lsp
+    return {'sendMessage': funcref('s:noop')}
   endif
 
   " job is the job used to talk to the backing instance of gopls.
@@ -144,19 +138,12 @@ function! s:newlsp() abort
       return
     endif
 
-    if get(self, 'exited', 0)
-      return
-    endif
-
     let l:msg = self.newResponse(a:req.id, l:resp)
     call self.write(l:msg)
   endfunction
 
   function! l:lsp.handleNotification(req) dict abort
-      " TODO(bc): handle more notifications (e.g. window/showMessage).
-      if a:req.method == 'textDocument/publishDiagnostics'
-        call s:handleDiagnostics(a:req.params)
-      endif
+      " TODO(bc): handle notifications (e.g. window/showMessage).
   endfunction
 
   function! l:lsp.handleResponse(resp) dict abort
@@ -305,10 +292,6 @@ function! s:newlsp() abort
   endfunction
 
   function! l:lsp.write(msg) dict abort
-    if empty(get(self, 'job', {}))
-      return
-    endif
-
     let l:body = json_encode(a:msg)
     let l:data = 'Content-Length: ' . strlen(l:body) . "\r\n\r\n" . l:body
 
@@ -322,31 +305,13 @@ function! s:newlsp() abort
     call ch_sendraw(self.job, l:data)
   endfunction
 
-  function! l:lsp.exit_cb(job, exit_status) dict
-    let self.exited = 1
-    if !get(self, 'restarting', 0)
-      return
-    endif
-
-    let l:queue = self.queue
-
-    let l:workspaces = self.workspaceDirectories
-
+  function! l:lsp.exit_cb(job, exit_status) dict abort
     call s:lspfactory.reset()
-    let l:lsp = s:lspfactory.get()
-
-    " restore workspaces
-    call call('go#lsp#AddWorkspaceDirectory', l:workspaces)
-    " * send DidOpen messages for all buffers that have b:did_lsp_open set
-    " TODO(bc): check modifiable and filetype, too?
-    bufdo if get(b:, 'go_lsp_did_open', 0) | if &modified | call go#lsp#DidOpen(expand('%:p')) | else | call go#lsp#DidChange(expand('%:p')) | endif | endif
-    let l:lsp.queue = extend(l:lsp.queue, l:queue)
-    return
   endfunction
+  " explicitly bind close_cb to state so that within it, self will always refer
 
   function! l:lsp.close_cb(ch) dict abort
-    " TODO(bc): remove the buffer variables that indicate that gopls has been
-    " informed that the file is open
+    " TODO(bc): does anything need to be done here?
   endfunction
 
   function! l:lsp.err_cb(ch, msg) dict abort
@@ -373,7 +338,7 @@ function! s:newlsp() abort
 
   let l:bin_path = go#path#CheckBinPath("gopls")
   if empty(l:bin_path)
-    return l:lsp
+    return
   endif
 
   let l:cmd = [l:bin_path]
@@ -614,114 +579,6 @@ function! s:completionErrorHandler(next, error) abort dict
   call call(a:next, [-1, []])
 endfunction
 
-" go#lsp#SameIDs calls gopls to get the references to the identifier at line
-" and col in fname. handler should be a dictionary function that takes a list
-" of strings in the form 'file:line:col: message'. handler will be attached to
-" a dictionary that manages state (statuslines, sets the winid, etc.). handler
-" should take three arguments: an exit_code, a JSON object encoded to a string
-" that mimics guru's ouput for `what`, and third mode parameter that only
-" exists for compatibility with the guru implementation of SameIDs.
-" TODO(bc): refactor to not need the guru adapter.
-function! go#lsp#SameIDs(showstatus, fname, line, col, handler) abort
-  call go#lsp#DidChange(a:fname)
-
-  let l:lsp = s:lspfactory.get()
-  let l:msg = go#lsp#message#References(a:fname, a:line, a:col)
-
-  if a:showstatus
-    let l:state = s:newHandlerState('same ids')
-  else
-    let l:state = s:newHandlerState('')
-  endif
-
-  let l:state.handleResult = funcref('s:sameIDsHandler', [function(a:handler, [], l:state)], l:state)
-  let l:state.error = funcref('s:noop')
-  return l:lsp.sendMessage(l:msg, l:state)
-endfunction
-
-function! s:sameIDsHandler(next, msg) abort dict
-  let l:furi = go#path#ToURI(expand('%:p'))
-
-  let l:result = {
-        \ 'sameids': [],
-        \ 'enclosing': [],
-      \ }
-
-  for l:loc in a:msg
-    if l:loc.uri !=# l:furi
-      continue
-    endif
-
-    if len(l:result.enclosing) == 0
-      let l:result.enclosing = [{
-            \ 'desc': 'identifier',
-            \ 'start': l:loc.range.start.character+1,
-            \ 'end': l:loc.range.end.character+1,
-          \ }]
-    endif
-
-    let l:result.sameids = add(l:result.sameids, printf('%s:%s:%s', go#path#FromURI(l:loc.uri), l:loc.range.start.line+1, l:loc.range.start.character+1))
-  endfor
-
-  call call(a:next, [0, json_encode(l:result), ''])
-endfunction
-
-" go#lsp#Referrers calls gopls to get the references to the identifier at line
-" and col in fname. handler should be a dictionary function that takes a list
-" of strings in the form 'file:line:col: message'. handler will be attached to
-" a dictionary that manages state (statuslines, sets the winid, etc.). handler
-" should take three arguments: an exit_code, a JSON object encoded to a string
-" that mimics guru's ouput for `what`, and third mode parameter that only
-" exists for compatibility with the guru implementation of SameIDs.
-" TODO(bc): refactor to not need the guru adapter.
-function! go#lsp#Referrers(fname, line, col, handler) abort
-  call go#lsp#DidChange(a:fname)
-
-  let l:lsp = s:lspfactory.get()
-  let l:msg = go#lsp#message#References(a:fname, a:line, a:col)
-
-  let l:state = s:newHandlerState('referrers')
-
-  let l:state.handleResult = funcref('s:referencesHandler', [function(a:handler, [], l:state)], l:state)
-  let l:state.error = funcref('s:noop')
-  return l:lsp.sendMessage(l:msg, l:state)
-endfunction
-
-function! s:referencesHandler(next, msg) abort dict
-  let l:result = []
-
-  call sort(a:msg, funcref('s:compareLocations'))
-
-  for l:loc in a:msg
-    let l:fname = go#path#FromURI(l:loc.uri)
-    let l:line = l:loc.range.start.line+1
-    let l:bufnr = bufnr(l:fname)
-    let l:bufinfo = getbufinfo(l:fname)
-
-    try
-      if l:bufnr == -1 || len(l:bufinfo) == 0 || l:bufinfo[0].loaded == 0
-        let l:filecontents = readfile(l:fname, '', l:line)
-      else
-        let l:filecontents = getbufline(l:fname, l:line)
-      endif
-
-      if len(l:filecontents) == 0
-        continue
-      endif
-
-      let l:content = l:filecontents[-1]
-    catch
-      call go#util#EchoError(printf('%s (line %s): %s at %s', l:fname, l:line, v:exception, v:throwpoint))
-    endtry
-
-    let l:item = printf('%s:%s:%s: %s', go#path#FromURI(l:loc.uri), l:line, go#lsp#lsp#PositionOf(l:content, l:loc.range.start.character), l:content)
-
-    let l:result = add(l:result, l:item)
-  endfor
-
-  call call(a:next, [0, l:result, ''])
-endfunction
-
 function! go#lsp#Hover(fname, line, col, handler) abort
   call go#lsp#DidChange(a:fname)
 
@@ -734,19 +591,15 @@ function! go#lsp#Hover(fname, line, col, handler) abort
 endfunction
 
 function! s:hoverHandler(next, msg) abort dict
-  try
-    let l:content = split(a:msg.contents.value, '; ')
-    if len(l:content) > 1
-      let l:curly = stridx(l:content[0], '{')
-      let l:content = extend([l:content[0][0:l:curly]], map(extend([l:content[0][l:curly+1:]], l:content[1:]), '"\t" . v:val'))
-      let l:content[len(l:content)-1] = '}'
-    endif
+  let l:content = split(a:msg.contents.value, '; ')
+  if len(l:content) > 1
+    let l:curly = stridx(l:content[0], '{')
+    let l:content = extend([l:content[0][0:l:curly]], map(extend([l:content[0][l:curly+1:]], l:content[1:]), '"\t" . v:val'))
+    let l:content[len(l:content)-1] = '}'
+  endif
 
-    let l:args = [l:content]
-    call call(a:next, l:args)
-  catch
-    " TODO(bc): log the message and/or show an error message.
-  endtry
+  let l:args = [l:content]
+  call call(a:next, l:args)
 endfunction
 
 function! go#lsp#Info(showstatus)
@@ -871,16 +724,12 @@ function! go#lsp#CleanWorkspaces() abort
   let l:missing = []
   for l:dir in l:lsp.workspaceDirectories
     if !isdirectory(l:dir)
-      let l:missing = add(l:missing, l:dir)
+      let l:dir = add(l:missing, l:dir)
       call remove(l:lsp.workspaceDirectories, l:i)
       continue
     endif
     let l:i += 1
   endfor
-
-  if len(l:missing) == 0
-    return 0
-  endif
 
   let l:state = s:newHandlerState('')
   let l:state.handleResult = funcref('s:noop')
@@ -918,40 +767,7 @@ function! go#lsp#DebugBrowser() abort
   call go#util#OpenBrowser(printf('http://localhost:%d', l:port))
 endfunction
 
-function! go#lsp#Exit() abort
-  call s:exit(0)
-endfunction
-
-function! go#lsp#Restart() abort
-  call s:exit(1)
-endfunction
-
-function! s:exit(restart) abort
-  if !go#util#has_job() || len(s:lspfactory) == 0 || !has_key(s:lspfactory, 'current')
-    return
-  endif
-
-  let l:lsp = s:lspfactory.get()
-
-  " reset the factory so that future requests don't use the same instance of
-  " gopls.
-  call s:lspfactory.reset()
-
-  let l:lsp.restarting = a:restart
-
-  let l:state = s:newHandlerState('exit')
-
-  let l:msg = go#lsp#message#Shutdown()
-  let l:state.handleResult = funcref('s:noop')
-  let l:retval = l:lsp.sendMessage(l:msg, l:state)
-
-  let l:msg = go#lsp#message#Exit()
-  let l:retval = l:lsp.sendMessage(l:msg, l:state)
-
-  return l:retval
-endfunction
-
-function! s:debugasync(event, data, timer) abort
+function! s:debug(event, data) abort
   if !go#util#HasDebug('lsp')
     return
   endif
@@ -980,84 +796,6 @@ function! s:debugasync(event, data, timer) abort
     setlocal nomodifiable
   finally
     call win_gotoid(l:winid)
-  endtry
-endfunction
-
-function! s:debug(event, data, ...) abort
-  call timer_start(10, function('s:debugasync', [a:event, a:data]))
-endfunction
-
-function! s:compareLocations(left, right) abort
-  if a:left.uri < a:right.uri
-    return -1
-  endif
-
-  if a:left.uri == a:right.uri && a:left.range.start.line < a:right.range.start.line
-    return -1
-  endif
-
-  if a:left.uri == a:right.uri && a:left.range.start.line == a:right.range.start.line && a:left.range.start.character < a:right.range.start.character
-    return -1
-  endif
-
-  if a:left.uri == a:right.uri && a:left.range.start.line == a:right.range.start.line && a:left.range.start.character == a:right.range.start.character
-    return 0
-  endif
-
-  return 1
-endfunction
-
-function! s:handleDiagnostics(data) abort
-  if !exists("*matchaddpos")
-    return 0
-  endif
-
-  try
-    let l:fname = go#path#FromURI(a:data.uri)
-    if bufnr(l:fname) == bufnr('')
-      let l:errorMatches = []
-      let l:warningMatches = []
-      for l:diag in a:data.diagnostics
-        if !(l:diag.severity == 1 || l:diag.severity == 2)
-          continue
-        endif
-        let l:range = l:diag.range
-        if l:range.start.line != l:range.end.line
-          continue
-        endif
-
-        let l:line = l:range.start.line + 1
-        let l:col = go#lsp#lsp#PositionOf(getline(l:line), l:range.start.character)
-        let l:lastcol = go#lsp#lsp#PositionOf(getline(l:line), l:range.end.character)
-
-        let l:pos = [l:line, l:col, l:lastcol - l:col + 1]
-        if l:diag.severity == 1
-          let l:errorMatches = add(l:errorMatches, l:pos)
-        elseif l:diag.severity == 2
-          let l:warningMatches = add(l:warningMatches, l:pos)
-        endif
-      endfor
-
-      if hlexists('goDiagnosticError')
-        " clear the old matches just before adding the new ones to keep flicker
-        " to a minimum.
-        call go#util#ClearGroupFromMatches('goDiagnosticError')
-        if go#config#HighlightDiagnosticErrors()
-          call matchaddpos('goDiagnosticError', l:errorMatches)
-        endif
-      endif
-
-      if hlexists('goDiagnosticError')
-        " clear the old matches just before adding the new ones to keep flicker
-        " to a minimum.
-        call go#util#ClearGroupFromMatches('goDiagnosticWarning')
-        if go#config#HighlightDiagnosticWarnings()
-          call matchaddpos('goDiagnosticWarning', l:warningMatches)
-        endif
-      endif
-    endif
-  catch
-    call go#util#EchoError(v:exception)
   endtry
 endfunction
 

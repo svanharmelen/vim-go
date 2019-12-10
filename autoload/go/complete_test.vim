@@ -23,15 +23,12 @@ endfunction
 func! s:getinfo()
     let l:filename = 'complete/complete.go'
     let l:tmp = gotest#load_fixture(l:filename)
-    try
-      call cursor(8, 3)
 
-      let expected = 'func Example(s string)'
-      let actual = go#complete#GetInfo()
-      call assert_equal(expected, actual)
-    finally
-      call delete(l:tmp, 'rf')
-    endtry
+    call cursor(8, 3)
+
+    let expected = 'func Example(s string)'
+    let actual = go#complete#GetInfo()
+    call assert_equal(expected, actual)
 endfunction
 
 " restore Vi compatibility settings

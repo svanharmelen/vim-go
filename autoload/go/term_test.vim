@@ -22,7 +22,6 @@ func! Test_GoTermNewMode()
     call assert_equal(actual, l:expected)
 
   finally
-    sleep 50m
     call delete(l:tmp, 'rf')
   endtry
 endfunc
@@ -47,7 +46,6 @@ func! Test_GoTermNewMode_SplitRight()
     call assert_equal(actual, l:expected)
 
   finally
-    sleep 50m
     call delete(l:tmp, 'rf')
     set nosplitright
   endtry

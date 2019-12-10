@@ -221,6 +221,7 @@ function! s:info_complete(echo, result) abort
 endfunction
 
 function! s:trim_bracket(val) abort
+  echom a:val
   let a:val.word = substitute(a:val.word, '[(){}\[\]]\+$', '', '')
   return a:val
 endfunction
@@ -252,10 +253,6 @@ function! go#complete#GocodeComplete(findstart, base) abort
 endfunction
 
 function! go#complete#Complete(findstart, base) abort
-  if !go#config#GoplsEnabled()
-    return -3
-  endif
-
   let l:state = {'done': 0, 'matches': [], 'start': -1}
 
   function! s:handler(state, start, matches) abort dict
@@ -296,11 +293,11 @@ function! go#complete#ToggleAutoTypeInfo() abort
   if go#config#AutoTypeInfo()
     call go#config#SetAutoTypeInfo(0)
     call go#util#EchoProgress("auto type info disabled")
-  else
-    call go#config#SetAutoTypeInfo(1)
-    call go#util#EchoProgress("auto type info enabled")
-  endif
-  call go#auto#update_autocmd()
+    return
+  end
+
+  call go#config#SetAutoTypeInfo(1)
+  call go#util#EchoProgress("auto type info enabled")
 endfunction
 
 " restore Vi compatibility settings

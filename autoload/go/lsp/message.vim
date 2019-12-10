@@ -21,11 +21,6 @@ function! go#lsp#message#Initialize(wd) abort
                 \ 'hover': {
                   \ 'contentFormat': ['plaintext'],
                 \ },
-                \ 'completion': {
-                \   'completionItem': {
-                \     'snippetSupport': go#config#GoplsUsePlaceholders() ? v:true : v:false,
-                \   },
-                \ },
               \ }
             \ },
             \ 'workspaceFolders': [s:workspaceFolder(0, a:wd)],
@@ -38,20 +33,6 @@ function! go#lsp#message#Initialized() abort
           \ 'notification': 1,
           \ 'method': 'initialized',
           \ 'params': {},
-       \ }
-endfunction
-
-function! go#lsp#message#Shutdown() abort
-  return {
-          \ 'notification': 0,
-          \ 'method': 'shutdown',
-       \ }
-endfunction
-
-function! go#lsp#message#Exit() abort
-  return {
-          \ 'notification': 1,
-          \ 'method': 'exit',
        \ }
 endfunction
 
@@ -141,22 +122,6 @@ function! go#lsp#message#Completion(file, line, col) abort
        \ }
 endfunction
 
-function! go#lsp#message#References(file, line, col) abort
-  return {
-          \ 'notification': 0,
-          \ 'method': 'textDocument/references',
-          \ 'params': {
-          \   'textDocument': {
-          \       'uri': go#path#ToURI(a:file)
-          \   },
-          \   'position': s:position(a:line, a:col),
-          \   'context': {
-          \       'includeDeclaration': v:true,
-          \   },
-          \ }
-       \ }
-endfunction
-
 function! go#lsp#message#Hover(file, line, col) abort
   return {
           \ 'notification': 0,
@@ -195,10 +160,6 @@ function! go#lsp#message#ConfigurationResult(items) abort
     let l:config = {
           \ 'buildFlags': [],
           \ 'hoverKind': 'NoDocumentation',
-          \ 'deepCompletion': go#config#GoplsDeepCompletion() ? v:true : v:false,
-          \ 'fuzzyMatching': go#config#GoplsFuzzyMatching() ? v:true : v:false,
-          \ 'completeUnimported': go#config#GoplsCompleteUnimported() ? v:true : v:false,
-          \ 'usePlaceholders': go#config#GoplsUsePlaceholders() ? v:true : v:false,
           \ }
     let l:buildtags = go#config#BuildTags()
     if buildtags isnot ''
